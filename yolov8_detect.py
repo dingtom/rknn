@@ -258,7 +258,8 @@ def export_rknn_inference(img):
     # 加载ONNX模型
     print('--> Loading model')
     # 指定模型输出节点名称，包括回归分支(reg)和分类分支(cls)
-    ret = rknn.load_onnx(model=ONNX_MODEL, outputs=["reg1","cls1","reg2","cls2","reg3","cls3"])
+    ret = rknn.load_onnx(model=ONNX_MODEL, 
+                         outputs=["reg1","cls1","reg2","cls2","reg3","cls3"])
     if ret != 0:
         print('Load model failed!')
         exit(ret)
@@ -306,12 +307,10 @@ if __name__ == '__main__':
     print('This is main ...')
     # 生成特征图网格坐标
     GenerateMeshgrid()
-
     # 读取测试图片
     img_path = './street.jpg'
     orig_img = cv2.imread(img_path)  # 读取原始图像
     img_h, img_w = orig_img.shape[:2]  # 获取原始图像的高度和宽度
-
     # 图像预处理
     # 1. 将图像缩放到模型输入大小
     origimg = cv2.resize(orig_img, (input_imgW, input_imgH), interpolation=cv2.INTER_LINEAR)
@@ -319,21 +318,16 @@ if __name__ == '__main__':
     origimg = cv2.cvtColor(origimg, cv2.COLOR_BGR2RGB)
     # 3. 添加batch维度
     img = np.expand_dims(origimg, 0)
-
     # 执行RKNN模型推理
     outputs = export_rknn_inference(img)
-
     # 整理模型输出
     out = []
     for i in range(len(outputs)):
         out.append(outputs[i])
-
     # 后处理得到检测框结果
     predbox = postprocess(out, img_h, img_w)
-
     # 打印检测到的目标数量
     print(len(predbox))
-
     # 在原图上绘制检测结果
     for i in range(len(predbox)):
         # 获取检测框的坐标和信息
@@ -344,7 +338,6 @@ if __name__ == '__main__':
         classId = predbox[i].classId  # 类别ID
         score = predbox[i].score      # 置信度分数
         head = predbox[i].head        # 检测头索引
-
         # 绘制矩形框，颜色为绿色(BGR格式)
         cv2.rectangle(orig_img, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
         # 设置文本位置（左上角）
