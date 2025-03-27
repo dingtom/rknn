@@ -1,0 +1,6 @@
+*.mp4
+.*/
+*img/
+output/
+*.onnx
+*.rknn
