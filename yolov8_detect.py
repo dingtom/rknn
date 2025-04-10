@@ -10,11 +10,12 @@ from rknn.api import RKNN  # RKNN API，用于模型转换和推理
 from math import exp  # 数学库中的指数函数
 
 # 模型和数据集相关的配置
-ONNX_MODEL = './yolov8s.dict.onnx'  # ONNX模型文件路径
-RKNN_MODEL = './yolov8s.int.rknn'  # 转换后的RKNN模型保存路径
-DATASET = './datasets.txt'  # 数据集文件路径
+ONNX_MODEL = './weights/yolov8s.dict.onnx'  # ONNX模型文件路径
+RKNN_MODEL = './weights/yolov8s.int.rknn'  # 转换后的RKNN模型保存路径
+DATASET = './detect_datasets.txt'  # 数据集文件路径
 
 QUANTIZE_ON = True  # 是否开启量化，True表示开启量化以减少模型大小和加快推理速度
+QUANTIZE_ON = False  # 是否开启量化，True表示开启量化以减少模型大小和加快推理速度
 
 CLASSES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
            'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -91,8 +92,6 @@ def GenerateMeshgrid():
                 meshgrid.append(i + 0.5)  # y坐标
 
 
-
-
 # 计算两个边界框的交并比(IOU)
 def IOU(xmin1, ymin1, xmax1, ymax1, xmin2, ymin2, xmax2, ymax2):
     # 计算两个框的交集区域的坐标
@@ -100,36 +99,28 @@ def IOU(xmin1, ymin1, xmax1, ymax1, xmin2, ymin2, xmax2, ymax2):
     ymin = max(ymin1, ymin2)  # 交集区域的左上角y坐标
     xmax = min(xmax1, xmax2)  # 交集区域的右下角x坐标
     ymax = min(ymax1, ymax2)  # 交集区域的右下角y坐标
-
     # 计算交集区域的宽度和高度
     innerWidth = xmax - xmin
     innerHeight = ymax - ymin
-
     # 确保宽度和高度不为负数
     innerWidth = innerWidth if innerWidth > 0 else 0
     innerHeight = innerHeight if innerHeight > 0 else 0
-
     # 计算交集面积
     innerArea = innerWidth * innerHeight
-
     # 计算两个框的面积
     area1 = (xmax1 - xmin1) * (ymax1 - ymin1)  # 第一个框的面积
     area2 = (xmax2 - xmin2) * (ymax2 - ymin2)  # 第二个框的面积
-
     # 计算并集面积
     total = area1 + area2 - innerArea
-
     # 返回IOU值（交集面积除以并集面积）
     return innerArea / total
 
 
 # 非极大值抑制(NMS)函数，用于去除重叠的检测框
 def NMS(detectResult):
-    predBoxs = []  # 存储最终保留的检测框
-
+    predBoxs = []  # 
     # 按照置信度降序排序所有检测框
     sort_detectboxs = sorted(detectResult, key=lambda x: x.score, reverse=True)
-
     # 遍历每个检测框
     for i in range(len(sort_detectboxs)):
         # 获取当前检测框的坐标和类别ID
@@ -138,7 +129,6 @@ def NMS(detectResult):
         xmax1 = sort_detectboxs[i].xmax
         ymax1 = sort_detectboxs[i].ymax
         classId = sort_detectboxs[i].classId
-
         # 如果当前检测框未被标记为删除（classId != -1）
         if sort_detectboxs[i].classId != -1:
             # 将当前检测框添加到保留列表
@@ -171,19 +161,21 @@ def sigmoid(x):
 def postprocess(out, img_h, img_w):
     # print(meshgrid)
     print('postprocess ... ')
-
     detectResult = []  # 存储所有检测到的目标
     output = []  # 存储处理后的模型输出
     # 将模型输出展平为一维数组
     for i in range(len(out)):
+        # (1, 1, 4, 6400)     x,y,w,h * 80*80
+        # (1, 80, 80, 80)      80个类别  80*80
+        # (1, 1, 4, 1600)
+        # (1, 80, 40, 40)
+        # (1, 1, 4, 400)
+        # (1, 80, 20, 20)
         output.append(out[i].reshape((-1)))
-
     # 计算输入图像相对于模型输入尺寸的缩放比例
     scale_h = img_h / input_imgH  # 高度缩放比例
     scale_w = img_w / input_imgW  # 宽度缩放比例
-
     gridIndex = -2  # 网格索引初始值，用于遍历特征图的每个位置
-
     # 遍历每个检测头（总共3个检测头，分别处理不同尺度的特征图）
     for index in range(headNum):
         # 获取当前检测头的回归分支和分类分支输出
@@ -197,13 +189,17 @@ def postprocess(out, img_h, img_w):
         for h in range(mapSize[index][0]):  # 遍历特征图的高度
             for w in range(mapSize[index][1]):  # 遍历特征图的宽度
                 gridIndex += 2  # 更新网格索引，每个网格点对应两个坐标值(x,y)
-                
                 # 遍历所有目标类别
                 for cl in range(class_num):
                     # 计算当前网格点对当前类别的置信度
                     # 使用sigmoid函数将输出转换为0-1之间的概率值
-                    cls_val = sigmoid(cls[cl * mapSize[index][0] * mapSize[index][1] + h * mapSize[index][1] + w])
-                    
+                    cls_val = sigmoid(cls[cl * mapSize[index][0] * mapSize[index][1] \
+                                          + h * mapSize[index][1] \
+                                          + w])
+                      # 当前类别的起始位置。
+                      # 当前行的起始位置。h 是当前网格点的行索引，mapSize[index][1] 是特征图的宽度。
+                      # 前列的具体位置。w 是当前网格点的列索引。
+
                     # 如果置信度超过阈值，则认为检测到了目标
                     if cls_val > objectThresh:
                         # 计算边界框的坐标（解码过程）
@@ -211,17 +207,33 @@ def postprocess(out, img_h, img_w):
                         # meshgrid中存储了特征图上的网格点坐标
                         # reg中存储了相对于网格点的偏移量
                         # strides[index]是当前检测头的步长，用于将特征图坐标映射回原图
-                        x1 = (meshgrid[gridIndex + 0] - reg[0 * mapSize[index][0] * mapSize[index][1] + h * mapSize[index][1] + w]) * strides[index]
-                        y1 = (meshgrid[gridIndex + 1] - reg[1 * mapSize[index][0] * mapSize[index][1] + h * mapSize[index][1] + w]) * strides[index]
+                        x1 = (meshgrid[gridIndex + 0] \
+                            - reg[0 * mapSize[index][0] * mapSize[index][1] \
+                            + h * mapSize[index][1] + w]) 
+                                        * strides[index]
+# meshgrid: 这是一个列表，存储了特征图上每个网格点的中心坐标。
+# gridIndex: 是一个索引变量，用于遍历 meshgrid 中的坐标值。
+# gridIndex + 0: 表示当前网格点的 x 坐标（gridIndex + 1 则表示 y 坐标）。
+# meshgrid[gridIndex + 0] 表示当前网格点在特征图上的 x 坐标。
+
+# mapSize[index][0] * mapSize[index][1]: 当前检测头的特征图总网格点数。
+# h * mapSize[index][1] + w: 当前网格点在 reg 数组中的索引位置。
+# 0 * ...: 表示这是 x 方向的偏移量（1 * ... 则表示 y 方向的偏移量，2 * ... 和 3 * ... 分别表示宽度和高度方向的偏移量）。
+# 因此，reg[...] 表示当前网格点在 x 方向的偏移量。
+
+# strides: 是一个列表，表示每个检测头的步长（stride）。步长用于将特征图上的坐标映射回原图的尺度。
+# strides[index]: 当前检测头的步长。通过乘以 strides[index]，可以将特征图上的坐标转换为原图上的坐标。
+
+                        y1 = (meshgrid[gridIndex + 1] \
+                            - reg[1 * mapSize[index][0] * mapSize[index][1] \
+                            + h * mapSize[index][1] + w]) * strides[index]
                         x2 = (meshgrid[gridIndex + 0] + reg[2 * mapSize[index][0] * mapSize[index][1] + h * mapSize[index][1] + w]) * strides[index]
                         y2 = (meshgrid[gridIndex + 1] + reg[3 * mapSize[index][0] * mapSize[index][1] + h * mapSize[index][1] + w]) * strides[index]
-
                         # 将边界框坐标缩放到原图尺寸
                         xmin = x1 * scale_w
                         ymin = y1 * scale_h
                         xmax = x2 * scale_w
                         ymax = y2 * scale_h
-
                         # 确保边界框坐标不超出图像范围
                         xmin = xmin if xmin > 0 else 0
                         ymin = ymin if ymin > 0 else 0
@@ -234,7 +246,6 @@ def postprocess(out, img_h, img_w):
     # NMS
     print('detectResult:', len(detectResult))
     predBox = NMS(detectResult)
-
     return predBox
 
 
@@ -319,11 +330,9 @@ if __name__ == '__main__':
     # 3. 添加batch维度
     img = np.expand_dims(origimg, 0)
     # 执行RKNN模型推理
-    outputs = export_rknn_inference(img)
+    outputs = export_rknn_inference(img)  # len 6
     # 整理模型输出
-    out = []
-    for i in range(len(outputs)):
-        out.append(outputs[i])
+    out = outputs[:]
     # 后处理得到检测框结果
     predbox = postprocess(out, img_h, img_w)
     # 打印检测到的目标数量

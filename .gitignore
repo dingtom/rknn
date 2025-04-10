@@ -4,3 +4,6 @@
 output/
 *.onnx
 *.rknn
+detect_datasets.txt
+test_rknn_result.jpg
+datasets.txt
